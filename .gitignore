@@ -1,0 +1,9 @@
+.DS_Store
+Thumbs.db
+db.json
+*.log
+.obsidian
+node_modules/
+# 需要上传静态资源用于搭建网站
+# public/
+.deploy*/
