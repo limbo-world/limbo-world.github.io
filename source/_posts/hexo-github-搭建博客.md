@@ -38,6 +38,9 @@ keywords:               # 站点关键词，用于搜索优化
 author:                 # 博主名
 language: zh-CN         # 站点语言
 timezone: Asia/Shanghai # 时区
+
+# Directory
+public_dir: ./ # 如果当前项目直接提交github，可以考虑改成这样，让index.html直接在根目录
 ```
 
 ## 1.4 服务启动
