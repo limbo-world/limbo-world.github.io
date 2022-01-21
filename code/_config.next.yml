@@ -376,7 +376,7 @@ back2top:
   # Scroll percent label in b2t button.
   scrollpercent: false
 
-# Reading progress bar
+# 阅读进度条 Reading progress bar
 reading_progress:
   enable: false
   # Available values: left | right
