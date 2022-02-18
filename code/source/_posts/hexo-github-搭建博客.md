@@ -2,6 +2,7 @@
 title: hexo github 搭建博客
 date: 2022-01-19 12:31:33
 tags: 
+copyright: true
 ---
 
 这里主要分享，基于hexo和github搭建博客的过程，避免采坑。
