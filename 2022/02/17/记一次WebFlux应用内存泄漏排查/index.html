@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#222" media="(prefers-color-scheme: dark)">
+<meta name="generator" content="Hexo 6.0.0">
+
+
+  <link rel="apple-touch-icon" sizes="180x180" href="/images/apple-touch-icon-next.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32x32-next.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16x16-next.png">
+  <link rel="mask-icon" href="/images/logo.svg" color="#222">
+  <meta name="google-site-verification" content="9Fk3LeYuD4FRvg3_s9YzJpOrHPPdex2pc_3BaoDxgfE">
+  <meta name="baidu-site-verification" content="code-qKYTw8zPC0">
+
+<link rel="stylesheet" href="/css/main.css">
+
+
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.4/css/all.min.css" integrity="sha256-mUZM63G8m73Mcidfrv5E+Y61y7a12O5mW4ezU3bxqW4=" crossorigin="anonymous">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/animate.css@3.1.1/animate.min.css" integrity="sha256-PR7ttpcvz8qrF57fur/yAx1qXMFJeJFiA6pSzWi0OIE=" crossorigin="anonymous">
+
+<script class="next-config" data-name="main" type="application/json">{"hostname":"limbo-world.github.io","root":"/","images":"/images","scheme":"Gemini","darkmode":true,"version":"8.9.0","exturl":false,"sidebar":{"position":"left","display":"post","padding":18,"offset":12},"copycode":false,"bookmark":{"enable":false,"color":"#222","save":"auto"},"mediumzoom":false,"lazyload":false,"pangu":false,"comments":{"style":"tabs","active":null,"storage":true,"lazyload":false,"nav":null},"stickytabs":false,"motion":{"enable":true,"async":false,"transition":{"post_block":"fadeIn","post_header":"fadeInDown","post_body":"fadeInDown","coll_header":"fadeInLeft","sidebar":"fadeInUp"}},"prism":false,"i18n":{"placeholder":"搜索...","empty":"没有找到任何搜索结果：${query}","hits_time":"找到 ${hits} 个搜索结果（用时 ${time} 毫秒）","hits":"找到 ${hits} 个搜索结果"},"path":"/search.xml","localsearch":{"enable":true,"trigger":"auto","top_n_per_article":1,"unescape":false,"preload":false}}</script><script src="/js/config.js"></script>
+<meta name="description" content="背景公司项目存在一个服务，类似于爬虫，需要解析给定的URL，从返回的HTML中提取页面的标题、封面图、摘要、icon等信息。由于这是一个无DB访问的纯内存服务，且下游服务（需解析的URL地址）并非内部服务，无需考虑并发压力，在服务搭建时选用WebFlux作为web层框架，选用spring的WebClient作为请求下游服务的HTTP客户端。 服务部署于k8s容器内，JDK版本为OpenJDK11，">
+<meta property="og:type" content="article">
+<meta property="og:title" content="记一次WebFlux应用内存泄漏排查">
+<meta property="og:url" content="https://limbo-world.github.io/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/index.html">
+<meta property="og:site_name" content="Limbo">
+<meta property="og:description" content="背景公司项目存在一个服务，类似于爬虫，需要解析给定的URL，从返回的HTML中提取页面的标题、封面图、摘要、icon等信息。由于这是一个无DB访问的纯内存服务，且下游服务（需解析的URL地址）并非内部服务，无需考虑并发压力，在服务搭建时选用WebFlux作为web层框架，选用spring的WebClient作为请求下游服务的HTTP客户端。 服务部署于k8s容器内，JDK版本为OpenJDK11，">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:image" content="https://limbo-world.github.io/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/pod_memory_used.png">
+<meta property="og:image" content="https://limbo-world.github.io/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/jmap_histo_live.png">
+<meta property="og:image" content="https://limbo-world.github.io/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/webclient_requestheadersspec_exchange.png">
+<meta property="og:image" content="https://limbo-world.github.io/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/clientresponse.png">
+<meta property="article:published_time" content="2022-02-17T12:15:15.000Z">
+<meta property="article:modified_time" content="2022-02-18T07:05:54.089Z">
+<meta property="article:author" content="Limbo">
+<meta property="article:tag" content="WebFlux">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://limbo-world.github.io/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/pod_memory_used.png">
+
+
+<link rel="canonical" href="https://limbo-world.github.io/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/">
+
+
+
+<script class="next-config" data-name="page" type="application/json">{"sidebar":"","isHome":false,"isPost":true,"lang":"zh-CN","comments":true,"permalink":"https://limbo-world.github.io/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/","path":"2022/02/17/记一次WebFlux应用内存泄漏排查/","title":"记一次WebFlux应用内存泄漏排查"}</script>
+
+<script class="next-config" data-name="calendar" type="application/json">""</script>
+<title>记一次WebFlux应用内存泄漏排查 | Limbo</title>
+  
+
+
+
+
+
+  <noscript>
+    <link rel="stylesheet" href="/css/noscript.css">
+  </noscript>
+<link rel="alternate" href="/atom.xml" title="Limbo" type="application/atom+xml">
+</head>
+
+<body itemscope itemtype="http://schema.org/WebPage" class="use-motion">
+  <div class="headband"></div>
+
+  <main class="main">
+    <header class="header" itemscope itemtype="http://schema.org/WPHeader">
+      <div class="header-inner"><div class="site-brand-container">
+  <div class="site-nav-toggle">
+    <div class="toggle" aria-label="切换导航栏" role="button">
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+        <span class="toggle-line"></span>
+    </div>
+  </div>
+
+  <div class="site-meta">
+
+    <a href="/" class="brand" rel="start">
+      <i class="logo-line"></i>
+      <p class="site-title">Limbo</p>
+      <i class="logo-line"></i>
+    </a>
+  </div>
+
+  <div class="site-nav-right">
+    <div class="toggle popup-trigger">
+        <i class="fa fa-search fa-fw fa-lg"></i>
+    </div>
+  </div>
+</div>
+
+
+
+<nav class="site-nav">
+  <ul class="main-menu menu">
+        <li class="menu-item menu-item-home"><a href="/" rel="section"><i class="fa fa-home fa-fw"></i>首页</a></li>
+        <li class="menu-item menu-item-about"><a href="/about/" rel="section"><i class="fa fa-user fa-fw"></i>关于</a></li>
+        <li class="menu-item menu-item-tags"><a href="/tags/" rel="section"><i class="fa fa-tags fa-fw"></i>标签</a></li>
+        <li class="menu-item menu-item-categories"><a href="/categories/" rel="section"><i class="fa fa-th fa-fw"></i>分类</a></li>
+        <li class="menu-item menu-item-archives"><a href="/archives/" rel="section"><i class="fa fa-archive fa-fw"></i>归档</a></li>
+      <li class="menu-item menu-item-search">
+        <a role="button" class="popup-trigger"><i class="fa fa-search fa-fw"></i>搜索
+        </a>
+      </li>
+  </ul>
+</nav>
+
+
+
+  <div class="search-pop-overlay">
+    <div class="popup search-popup"><div class="search-header">
+  <span class="search-icon">
+    <i class="fa fa-search"></i>
+  </span>
+  <div class="search-input-container">
+    <input autocomplete="off" autocapitalize="off" maxlength="80"
+           placeholder="搜索..." spellcheck="false"
+           type="search" class="search-input">
+  </div>
+  <span class="popup-btn-close" role="button">
+    <i class="fa fa-times-circle"></i>
+  </span>
+</div>
+<div class="search-result-container no-result">
+  <div class="search-result-icon">
+    <i class="fa fa-spinner fa-pulse fa-5x"></i>
+  </div>
+</div>
+
+    </div>
+  </div>
+
+</div>
+        
+  
+  <div class="toggle sidebar-toggle" role="button">
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+    <span class="toggle-line"></span>
+  </div>
+
+  <aside class="sidebar">
+
+    <div class="sidebar-inner sidebar-nav-active sidebar-toc-active">
+      <ul class="sidebar-nav">
+        <li class="sidebar-nav-toc">
+          文章目录
+        </li>
+        <li class="sidebar-nav-overview">
+          站点概览
+        </li>
+      </ul>
+
+      <div class="sidebar-panel-container">
+        <!--noindex-->
+        <div class="post-toc-wrap sidebar-panel">
+            <div class="post-toc animated"><ol class="nav"><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%83%8C%E6%99%AF"><span class="nav-number">1.</span> <span class="nav-text">背景</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E9%97%AE%E9%A2%98%E6%8F%8F%E8%BF%B0"><span class="nav-number">2.</span> <span class="nav-text">问题描述</span></a></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E8%A7%A3%E5%86%B3%E8%BF%87%E7%A8%8B"><span class="nav-number">3.</span> <span class="nav-text">解决过程</span></a><ol class="nav-child"><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%88%9D%E6%AD%A5%E5%88%86%E6%9E%90"><span class="nav-number">3.1.</span> <span class="nav-text">初步分析</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E5%AE%9A%E4%BD%8D%E9%97%AE%E9%A2%98%E5%87%BA%E7%8E%B0%E4%BD%8D%E7%BD%AE"><span class="nav-number">3.2.</span> <span class="nav-text">定位问题出现位置</span></a></li><li class="nav-item nav-level-2"><a class="nav-link" href="#%E8%A7%A3%E5%86%B3%E9%97%AE%E9%A2%98"><span class="nav-number">3.3.</span> <span class="nav-text">解决问题</span></a></li></ol></li><li class="nav-item nav-level-1"><a class="nav-link" href="#%E6%80%BB%E7%BB%93"><span class="nav-number">4.</span> <span class="nav-text">总结</span></a></li></ol></div>
+        </div>
+        <!--/noindex-->
+
+        <div class="site-overview-wrap sidebar-panel">
+          <div class="site-author site-overview-item animated" itemprop="author" itemscope itemtype="http://schema.org/Person">
+  <p class="site-author-name" itemprop="name">Limbo</p>
+  <div class="site-description" itemprop="description"></div>
+</div>
+<div class="site-state-wrap site-overview-item animated">
+  <nav class="site-state">
+      <div class="site-state-item site-state-posts">
+        <a href="/archives/">
+          <span class="site-state-item-count">2</span>
+          <span class="site-state-item-name">日志</span>
+        </a>
+      </div>
+      <div class="site-state-item site-state-categories">
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">分类</span>
+      </div>
+      <div class="site-state-item site-state-tags">
+        <span class="site-state-item-count">1</span>
+        <span class="site-state-item-name">标签</span>
+      </div>
+  </nav>
+</div>
+
+
+
+        </div>
+      </div>
+    </div>
+  </aside>
+  <div class="sidebar-dimmer"></div>
+
+
+    </header>
+
+    
+  <div class="back-to-top" role="button" aria-label="返回顶部">
+    <i class="fa fa-arrow-up"></i>
+    <span>0%</span>
+  </div>
+
+  <a href="https://github.com/limbo-world" class="github-corner" title="Follow me on GitHub" aria-label="Follow me on GitHub" rel="noopener" target="_blank"><svg width="80" height="80" viewBox="0 0 250 250" aria-hidden="true"><path d="M0,0 L115,115 L130,115 L142,142 L250,250 L250,0 Z"></path><path d="M128.3,109.0 C113.8,99.7 119.0,89.6 119.0,89.6 C122.0,82.7 120.5,78.6 120.5,78.6 C119.2,72.0 123.4,76.3 123.4,76.3 C127.3,80.9 125.5,87.3 125.5,87.3 C122.9,97.6 130.6,101.9 134.4,103.2" fill="currentColor" style="transform-origin: 130px 106px;" class="octo-arm"></path><path d="M115.0,115.0 C114.9,115.1 118.7,116.5 119.8,115.4 L133.7,101.6 C136.9,99.2 139.9,98.4 142.2,98.6 C133.8,88.0 127.5,74.4 143.8,58.0 C148.5,53.4 154.0,51.2 159.7,51.0 C160.3,49.4 163.2,43.6 171.4,40.1 C171.4,40.1 176.1,42.5 178.8,56.2 C183.1,58.6 187.2,61.8 190.9,65.4 C194.5,69.0 197.7,73.2 200.1,77.6 C213.8,80.2 216.3,84.9 216.3,84.9 C212.7,93.1 206.9,96.0 205.4,96.6 C205.1,102.4 203.0,107.8 198.3,112.5 C181.9,128.9 168.3,122.5 157.7,114.1 C157.9,116.9 156.7,120.9 152.7,124.9 L141.0,136.5 C139.8,137.7 141.6,141.9 141.8,141.8 Z" fill="currentColor" class="octo-body"></path></svg></a>
+
+<noscript>
+  <div class="noscript-warning">Theme NexT works best with JavaScript enabled</div>
+</noscript>
+
+
+    <div class="main-inner post posts-expand">
+
+
+  
+
+
+<div class="post-block">
+  
+  
+
+  <article itemscope itemtype="http://schema.org/Article" class="post-content" lang="zh-CN">
+    <link itemprop="mainEntityOfPage" href="https://limbo-world.github.io/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/">
+
+    <span hidden itemprop="author" itemscope itemtype="http://schema.org/Person">
+      <meta itemprop="image" content="/images/avatar.gif">
+      <meta itemprop="name" content="Limbo">
+      <meta itemprop="description" content="">
+    </span>
+
+    <span hidden itemprop="publisher" itemscope itemtype="http://schema.org/Organization">
+      <meta itemprop="name" content="Limbo">
+    </span>
+      <header class="post-header">
+        <h1 class="post-title" itemprop="name headline">
+          记一次WebFlux应用内存泄漏排查
+        </h1>
+
+        <div class="post-meta-container">
+          <div class="post-meta">
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar"></i>
+      </span>
+      <span class="post-meta-item-text">发表于</span>
+
+      <time title="创建时间：2022-02-17 20:15:15" itemprop="dateCreated datePublished" datetime="2022-02-17T20:15:15+08:00">2022-02-17</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-calendar-check"></i>
+      </span>
+      <span class="post-meta-item-text">更新于</span>
+      <time title="修改时间：2022-02-18 15:05:54" itemprop="dateModified" datetime="2022-02-18T15:05:54+08:00">2022-02-18</time>
+    </span>
+    <span class="post-meta-item">
+      <span class="post-meta-item-icon">
+        <i class="far fa-folder"></i>
+      </span>
+      <span class="post-meta-item-text">分类于</span>
+        <span itemprop="about" itemscope itemtype="http://schema.org/Thing">
+          <a href="/categories/%E9%97%AE%E9%A2%98%E6%8E%92%E6%9F%A5%E8%AE%B0%E5%BD%95/" itemprop="url" rel="index"><span itemprop="name">问题排查记录</span></a>
+        </span>
+    </span>
+
+  
+</div>
+
+        </div>
+      </header>
+
+    
+    
+    
+    <div class="post-body" itemprop="articleBody">
+        <h1 id="背景"><a href="#背景" class="headerlink" title="背景"></a>背景</h1><p>公司项目存在一个服务，类似于爬虫，需要解析给定的URL，从返回的HTML中提取页面的标题、封面图、摘要、icon等信息。由于这是一个无DB访问的纯内存服务，且下游服务（需解析的URL地址）并非内部服务，无需考虑并发压力，在服务搭建时选用<code>WebFlux</code>作为web层框架，选用spring的<code>WebClient</code>作为请求下游服务的HTTP客户端。</p>
+<p>服务部署于k8s容器内，JDK版本为OpenJDK11，Pod配置4C4G，Java服务配置最大堆内存2G。</p>
+<h1 id="问题描述"><a href="#问题描述" class="headerlink" title="问题描述"></a>问题描述</h1><p>服务上线后请求压力不大，但长时间运行后，服务堆内存占用达到99%，日志监控出现大量OOM报错，继而容器Pod重启。重启后可正常工作一段时间，之后再次堆内存占用99%，出现OOM报错。</p>
+<h1 id="解决过程"><a href="#解决过程" class="headerlink" title="解决过程"></a>解决过程</h1><h2 id="初步分析"><a href="#初步分析" class="headerlink" title="初步分析"></a>初步分析</h2><p>通过容器监控，查看Pod重启前一段时间的机器内存占用图，发现图呈现持续上升趋势，且到达堆内存分配上限后，Pod发生重启。初步推测是发生了内存泄漏。</p>
+<img src="/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/pod_memory_used.png" class="">
+
+<p>使用<code>jmap -histo:live 1</code>查看存活对象分布，发现byte数组占用内存较多，且<code>PoolSubpage</code>对象数量也较多，怀疑是netty发生了内存泄漏。</p>
+<img src="/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/jmap_histo_live.png" class="">
+
+<p>排查ELK中的ERROR日志，除OOM报错外，另发现少量netty的报错信息，异常堆栈如下：</p>
+<pre class="line-numbers language-text" data-language="text"><code class="language-text">LEAK: ByteBuf.release() was not called before it's garbage-collected. See https://netty.io/wiki/reference-counted-objects.html for more information.
+Recent access records: 
+Created at:
+    io.netty.buffer.PooledByteBufAllocator.newHeapBuffer(PooledByteBufAllocator.java:332)
+    io.netty.buffer.AbstractByteBufAllocator.heapBuffer(AbstractByteBufAllocator.java:168)
+    io.netty.buffer.AbstractByteBufAllocator.heapBuffer(AbstractByteBufAllocator.java:159)
+    io.netty.handler.codec.compression.JdkZlibDecoder.decode(JdkZlibDecoder.java:180)
+    io.netty.handler.codec.ByteToMessageDecoder.decodeRemovalReentryProtection(ByteToMessageDecoder.java:493)
+    io.netty.handler.codec.ByteToMessageDecoder.callDecode(ByteToMessageDecoder.java:432)
+    ...<span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+<p>从异常提示信息可见，netty的堆内存<code>ByteBuf</code>在未被释放的情况下被GC回收，而netty使用内存池进行堆内存管理，如<code>ByteBuff</code>未经过<code>release()</code>方法调用即被GC回收，将导致内存池中大量内存块的引用计数无法归零，导致内存无法回收。且<code>ByteBuf</code>被GC回收后，应用程序已经无法再调用<code>release()</code>方法，即导致了内存泄漏。</p>
+<h2 id="定位问题出现位置"><a href="#定位问题出现位置" class="headerlink" title="定位问题出现位置"></a>定位问题出现位置</h2><p>项目中使用netty的地方有：<code>Redisson</code>、<code>WebFlux</code>、<code>WebClient</code>。考虑到第三方库很成熟，经过很多商业项目应用，问题不太可能出现在库代码中，可能是自己的使用方式有误。应用程序中自己编码使用的主要是<code>WebClient</code>，用于请求第三方页面HTML。</p>
+<p>业务使用场景中，需要读取 ResponseHeader 和 ResponseBody 两部分内容。Header 用于从 Content-Type 中解析编码；Body 用于直接读取二进制数据，确定页面真正的编码格式。</p>
+<blockquote>
+<p>之所以需要确定页面真正编码格式，是因为有些第三方页面，response header中通过 Content-Type 声明编码格式为 UTF-8，但真正的编码格式却是 GBK 或 GB2312，导致解析中文摘要时乱码。因此需要读取二进制流后，根据流内容判断真实编码格式。写过爬虫的兄弟应该理解。</p>
+</blockquote>
+<p><code>WebClient</code>提供了如下多个获取 Response 的方法：</p>
+<ol>
+<li><p>WebClient.RequestHeadersSpec#retrieve<br>可以将 body 直接处理为指定类型的对象，但是无法直接操作 response；</p>
+</li>
+<li><p>WebClient.RequestHeadersSpec#exchange<br>可以直接操作 response，但 body 的读取操作需要自行处理；</p>
+</li>
+</ol>
+<p>为满足需求，项目中使用了<code>WebClient.RequestHeadersSpec#exchange</code>方法，这也是项目中唯一一处可以直接操作 ByteBuf 数据的地方。在使用此方法时，仅进行了数据读取操作，并没有释放 body。而在方法的注释上，刚好有这么一段：</p>
+<img src="/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/webclient_requestheadersspec_exchange.png" class="">
+
+<p>NOTE 部分翻译过来的大致意思是：</p>
+<blockquote>
+<p>与 retrieve() 不同，在使用 exchange() 时，不论在任何情况下（成功、异常、无法处理的数据等），应用程序都应当消费掉响应内容。不这样做可能会导致内存泄漏。请参阅 ClientResponse 以获取可用于消费 body 的方式。通常应该使用 retrieve()，除非您有充分的理由使用exchange()，它允许您检查响应状态和标题，并在之后用于决定是否消费body、如何消费body。</p>
+</blockquote>
+<p>而刚好在一些业务校验失败的情况下，如 Content-Type 中标识返回的数据不是 HTML 内容时，应用代码直接进行了 return，而没有消费 body，导致了内存泄漏。</p>
+<pre class="line-numbers language-java" data-language="java"><code class="language-java"><span class="token comment">// 请求代码示例</span>
+<span class="token class-name">WebClient</span><span class="token punctuation">.</span><span class="token function">builder</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">build</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">.</span><span class="token function">uri</span><span class="token punctuation">(</span>ctx<span class="token punctuation">.</span><span class="token function">getUri</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token punctuation">.</span><span class="token function">headers</span><span class="token punctuation">(</span>headers <span class="token operator">-></span> <span class="token punctuation">&#123;</span>
+        headers<span class="token punctuation">.</span><span class="token function">set</span><span class="token punctuation">(</span><span class="token class-name">HttpHeaders</span><span class="token punctuation">.</span>USER_AGENT<span class="token punctuation">,</span> CHROME_AGENT<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        headers<span class="token punctuation">.</span><span class="token function">set</span><span class="token punctuation">(</span><span class="token class-name">HttpHeaders</span><span class="token punctuation">.</span>HOST<span class="token punctuation">,</span> ctx<span class="token punctuation">.</span><span class="token function">getUri</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">getHost</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">&#125;</span><span class="token punctuation">)</span>
+    <span class="token punctuation">.</span><span class="token function">cookies</span><span class="token punctuation">(</span>cookies <span class="token operator">-></span> ctx<span class="token punctuation">.</span><span class="token function">getCookies</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">forEach</span><span class="token punctuation">(</span>cookies<span class="token operator">::</span><span class="token function">add</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token punctuation">.</span><span class="token function">exchange</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">.</span><span class="token function">flatMap</span><span class="token punctuation">(</span>response <span class="token operator">-></span> <span class="token punctuation">&#123;</span>
+        <span class="token comment">// 再次检测是否超时</span>
+        <span class="token comment">// 注意，这里直接返回了Mono.error，而没有释放response</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>ctx<span class="token punctuation">.</span><span class="token function">isParseTimeout</span><span class="token punctuation">(</span>PARSE_TIMEOUT<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">&#123;</span>
+            <span class="token keyword">return</span> <span class="token class-name">Mono</span><span class="token punctuation">.</span><span class="token function">error</span><span class="token punctuation">(</span><span class="token class-name">ReadTimeoutException</span><span class="token punctuation">.</span>INSTANCE<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">&#125;</span>
+
+        <span class="token comment">// 先解析重定向，不存在重定向则解析body</span>
+        <span class="token keyword">return</span> <span class="token function">judgeRedirect</span><span class="token punctuation">(</span>response<span class="token punctuation">,</span> ctx<span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">flatMap</span><span class="token punctuation">(</span>redirectTo <span class="token operator">-></span> <span class="token function">followRedirect</span><span class="token punctuation">(</span>ctx<span class="token punctuation">,</span> redirectTo<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">switchIfEmpty</span><span class="token punctuation">(</span><span class="token class-name">Mono</span><span class="token punctuation">.</span><span class="token function">defer</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">-></span> <span class="token class-name">Mono</span><span class="token punctuation">.</span><span class="token function">just</span><span class="token punctuation">(</span>parser<span class="token punctuation">.</span><span class="token function">parse</span><span class="token punctuation">(</span>ctx<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">map</span><span class="token punctuation">(</span><span class="token class-name">LinkParseResult</span><span class="token operator">::</span><span class="token function">detectParseFail</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">&#125;</span><span class="token punctuation">)</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+
+<h2 id="解决问题"><a href="#解决问题" class="headerlink" title="解决问题"></a>解决问题</h2><p>已经定位到问题发生的原因，且官方文档已给出了解决办法<code>参阅 ClientResponse 以获取可用于消费 body 的方式</code>。在<code>ClientResponse</code>接口的注释上，列出来所有用于消费 Response 的方法：</p>
+<img src="/2022/02/17/%E8%AE%B0%E4%B8%80%E6%AC%A1WebFlux%E5%BA%94%E7%94%A8%E5%86%85%E5%AD%98%E6%B3%84%E6%BC%8F%E6%8E%92%E6%9F%A5/clientresponse.png" class="">
+
+<p>具体每个方法的作用就不赘述，根据业务场景，应当在不需要消费 body 时调用 <code>releaseBody()</code> 方法进行释放。修改后的代码如下：</p>
+<pre class="line-numbers language-java" data-language="java"><code class="language-java"><span class="token comment">// 请求代码示例</span>
+<span class="token class-name">WebClient</span><span class="token punctuation">.</span><span class="token function">builder</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">build</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">.</span><span class="token function">get</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">.</span><span class="token function">uri</span><span class="token punctuation">(</span>ctx<span class="token punctuation">.</span><span class="token function">getUri</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token punctuation">.</span><span class="token function">headers</span><span class="token punctuation">(</span>headers <span class="token operator">-></span> <span class="token punctuation">&#123;</span>
+        headers<span class="token punctuation">.</span><span class="token function">set</span><span class="token punctuation">(</span><span class="token class-name">HttpHeaders</span><span class="token punctuation">.</span>USER_AGENT<span class="token punctuation">,</span> CHROME_AGENT<span class="token punctuation">)</span><span class="token punctuation">;</span>
+        headers<span class="token punctuation">.</span><span class="token function">set</span><span class="token punctuation">(</span><span class="token class-name">HttpHeaders</span><span class="token punctuation">.</span>HOST<span class="token punctuation">,</span> ctx<span class="token punctuation">.</span><span class="token function">getUri</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">getHost</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">&#125;</span><span class="token punctuation">)</span>
+    <span class="token punctuation">.</span><span class="token function">cookies</span><span class="token punctuation">(</span>cookies <span class="token operator">-></span> ctx<span class="token punctuation">.</span><span class="token function">getCookies</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token function">forEach</span><span class="token punctuation">(</span>cookies<span class="token operator">::</span><span class="token function">add</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token punctuation">.</span><span class="token function">exchange</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token punctuation">.</span><span class="token function">flatMap</span><span class="token punctuation">(</span>response <span class="token operator">-></span> <span class="token punctuation">&#123;</span>
+        <span class="token comment">// 再次检测是否超时，并释放response</span>
+        <span class="token keyword">if</span> <span class="token punctuation">(</span>ctx<span class="token punctuation">.</span><span class="token function">isParseTimeout</span><span class="token punctuation">(</span>PARSE_TIMEOUT<span class="token punctuation">)</span><span class="token punctuation">)</span> <span class="token punctuation">&#123;</span>
+            <span class="token keyword">return</span> response<span class="token punctuation">.</span><span class="token function">releaseBody</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+                    <span class="token punctuation">.</span><span class="token function">then</span><span class="token punctuation">(</span><span class="token class-name">Mono</span><span class="token punctuation">.</span><span class="token function">error</span><span class="token punctuation">(</span><span class="token class-name">ReadTimeoutException</span><span class="token punctuation">.</span>INSTANCE<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+        <span class="token punctuation">&#125;</span>
+
+        <span class="token comment">// 先解析重定向，不存在重定向则解析body</span>
+        <span class="token keyword">return</span> <span class="token function">judgeRedirect</span><span class="token punctuation">(</span>response<span class="token punctuation">,</span> ctx<span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">flatMap</span><span class="token punctuation">(</span>redirectTo <span class="token operator">-></span> <span class="token function">followRedirect</span><span class="token punctuation">(</span>ctx<span class="token punctuation">,</span> redirectTo<span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">switchIfEmpty</span><span class="token punctuation">(</span><span class="token class-name">Mono</span><span class="token punctuation">.</span><span class="token function">defer</span><span class="token punctuation">(</span><span class="token punctuation">(</span><span class="token punctuation">)</span> <span class="token operator">-></span> <span class="token class-name">Mono</span><span class="token punctuation">.</span><span class="token function">just</span><span class="token punctuation">(</span>parser<span class="token punctuation">.</span><span class="token function">parse</span><span class="token punctuation">(</span>ctx<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+                <span class="token punctuation">.</span><span class="token function">map</span><span class="token punctuation">(</span><span class="token class-name">LinkParseResult</span><span class="token operator">::</span><span class="token function">detectParseFail</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+    <span class="token punctuation">&#125;</span><span class="token punctuation">)</span><span aria-hidden="true" class="line-numbers-rows"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></span></code></pre>
+
+
+<h1 id="总结"><a href="#总结" class="headerlink" title="总结"></a>总结</h1><p>在使用响应式HTTP客户端<code>WebClient</code>时，接受响应数据使用了 <code>exchange()</code> 方法，但又在一些流程分支中没有调用 <code>ClientResponse#releaseBody()</code> 方法，导致大量数据得不到释放，netty内存池占满，后续的请求在申请内存时报OOM异常。</p>
+<p>得到经验教训：使用不熟悉的三方库时，一定要阅读方法注释、类注释。</p>
+<hr>
+<p>参考文档：</p>
+<ol>
+<li><a target="_blank" rel="noopener" href="http://www.bewindoweb.com/291.html">Netty内存泄漏排查</a></li>
+<li><a target="_blank" rel="noopener" href="https://docs.spring.io/spring-framework/docs/current/reference/html/web-reactive.html">Web on Reactive Stack</a></li>
+</ol>
+
+    </div>
+
+    
+    
+    
+
+    <footer class="post-footer">
+          <div class="post-tags">
+              <a href="/tags/WebFlux/" rel="tag"># WebFlux</a>
+          </div>
+
+        
+
+          <div class="post-nav">
+            <div class="post-nav-item">
+                <a href="/2022/01/19/hexo-github-%E6%90%AD%E5%BB%BA%E5%8D%9A%E5%AE%A2/" rel="prev" title="hexo github 搭建博客">
+                  <i class="fa fa-chevron-left"></i> hexo github 搭建博客
+                </a>
+            </div>
+            <div class="post-nav-item">
+            </div>
+          </div>
+    </footer>
+  </article>
+</div>
+
+
+
+
+
+
+</div>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+
+
+<div class="copyright">
+  &copy; 
+  <span itemprop="copyrightYear">2022</span>
+  <span class="with-love">
+    <i class="fa fa-heart"></i>
+  </span>
+  <span class="author" itemprop="copyrightHolder">Limbo</span>
+</div>
+  <div class="powered-by">由 <a href="https://hexo.io/" rel="noopener" target="_blank">Hexo</a> & <a href="https://theme-next.js.org/" rel="noopener" target="_blank">NexT.Gemini</a> 强力驱动
+  </div>
+
+    </div>
+  </footer>
+
+  
+  <script src="https://cdn.jsdelivr.net/npm/animejs@3.2.1/lib/anime.min.js" integrity="sha256-XL2inqUJaslATFnHdJOi9GfQ60on8Wx1C2H8DYiN1xY=" crossorigin="anonymous"></script>
+<script src="/js/comments.js"></script><script src="/js/utils.js"></script><script src="/js/motion.js"></script><script src="/js/next-boot.js"></script>
+
+  
+<script src="https://cdn.jsdelivr.net/npm/hexo-generator-searchdb@1.4.0/dist/search.js" integrity="sha256-vXZMYLEqsROAXkEw93GGIvaB2ab+QW6w3+1ahD9nXXA=" crossorigin="anonymous"></script>
+<script src="/js/third-party/search/local-search.js"></script>
+
+
+
+
+
+  
+
+
+
+
+
+</body>
+</html>
