@@ -22,7 +22,7 @@ pretty_urls:
 
 # Directory
 source_dir: source
-public_dir: ../
+public_dir: ./public
 tag_dir: tags
 archive_dir: archives
 category_dir: categories
@@ -103,7 +103,9 @@ theme: next
 # Deployment
 ## Docs: https://hexo.io/docs/one-command-deployment
 deploy:
-  type: ''
+  type: git
+  repo: git@github.com:limbo-world/limbo-world.github.io.git
+  branch: deploy
 
 # 文章搜索
 search:
