@@ -1,9 +1,11 @@
 .DS_Store
+.idea
 Thumbs.db
 db.json
 *.log
 .obsidian
+package-lock.json
 node_modules/
 # 需要上传静态资源用于搭建网站
-# public/
-.deploy*/
+public/
+.deploy_git
