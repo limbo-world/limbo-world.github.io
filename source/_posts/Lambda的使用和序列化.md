@@ -323,6 +323,8 @@ Exception in thread "main" java.lang.ClassCastException: lambda.STest$$Lambda$4/
 
 执行上面代码会报类型无法转换的问题。这是由于ObjectInputStream.readObject()方法会最终回调SerializedLambda.readResolve()方法，导致返回的结果是一个实现Serlializable的Lambda表达式实例，在实际操作的时候无法转成SerializedLambda实例。当前获取到的实例如下
 
+{% asset_image LambdaObject.png %}
+
 > 所以这里需要中断这个调用提前返回结果，参考Mybatis plus的实现方式，我们拷贝SerializedLambda定义一个新的类，然后删除readResolve()方法。
 
 ```java
@@ -332,7 +334,7 @@ return clazz == java.lang.invoke.SerializedLambda.class ? lambda.SerializedLambd
 // 输出
 getName
 ```
-
+{% asset_image SerializedLambdaObject.jpg %}
 
 --- 
 参考文档：
