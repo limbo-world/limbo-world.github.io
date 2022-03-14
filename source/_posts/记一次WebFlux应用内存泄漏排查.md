@@ -15,6 +15,8 @@ comments: true
 
 服务部署于k8s容器内，JDK版本为OpenJDK11，Pod配置4C4G，Java服务配置最大堆内存2G。
 
+<!-- more -->
+
 
 # 问题描述
 

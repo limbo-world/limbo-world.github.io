@@ -11,6 +11,8 @@ copyright: true
 
 源码地址: [https://github.com/hexojs/hexo](https://github.com/hexojs/hexo)
 
+<!-- more -->
+
 ## 安装
 ```bash
 $ npm install hexo-cli -g
@@ -25,6 +27,7 @@ hexo s # hexo server 的缩写 启动服务
 hexo help # 查看帮助
 hexo version # 查看版本
 hexo new [layout] <title> # 创建文章
+hexo d # deploy 配合发布脚本发布项目
 ```
 
 ## 部分配置
