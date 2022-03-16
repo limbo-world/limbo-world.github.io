@@ -277,6 +277,13 @@ getName<span aria-hidden="true" class="line-numbers-rows"><span></span><span></s
 <li>Mybatis-plus 源码</li>
 </ol>
 ]]></content>
+      <categories>
+        <category>源码解析</category>
+      </categories>
+      <tags>
+        <tag>Java</tag>
+        <tag>序列化</tag>
+      </tags>
   </entry>
   <entry>
     <title>hexo github 搭建博客</title>
