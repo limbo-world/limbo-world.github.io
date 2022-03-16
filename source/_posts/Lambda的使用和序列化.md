@@ -2,7 +2,12 @@
 title: Lambda的使用和序列化
 copyright: true
 date: 2022-03-11 19:26:53
+categories:
+  - 源码解析
 tags:
+  - Java
+  - 序列化
+comments: true
 ---
 
 最近想给orm工具包增加Lambda支持，实现`User:getId`映射到表`id`字段，碰到了问题，进行总结。
